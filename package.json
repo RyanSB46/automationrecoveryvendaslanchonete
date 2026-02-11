@@ -7,12 +7,18 @@
     "start": "node src/server.js",
     "dev": "node src/server.js"
   },
-  "keywords": ["evolution", "whatsapp", "automation", "contingency"],
+  "keywords": [
+    "evolution",
+    "whatsapp",
+    "automation",
+    "contingency"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
+    "axios": "^1.6.2",
     "dotenv": "^16.3.1",
-    "axios": "^1.6.2"
+    "express": "^4.18.2",
+    "serialport": "^13.0.0"
   }
 }

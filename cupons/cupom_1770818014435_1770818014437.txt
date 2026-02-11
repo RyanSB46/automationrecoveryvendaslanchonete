@@ -1,0 +1,38 @@
+════════════════════════════════════════
+        🍔 CASA DO HAMBÚRGUER 🍔
+        SISTEMA DE CONTINGÊNCIA
+════════════════════════════════════════
+
+📅 11/02/2026
+⏰ 10:53:34
+────────────────────────────────────────
+
+         PEDIDO #1770818014435
+────────────────────────────────────────
+
+CLIENTE:
+👤 RyanSB
+📱 5527996087528
+────────────────────────────────────────
+
+ITENS:
+• Xtudo, limonete, pizza moda casa sem b
+  anana e sem cebola
+────────────────────────────────────────
+
+ENDEREÇO:
+📍 Rua francisco, 8888 morada na lua
+────────────────────────────────────────
+
+PAGAMENTO:
+💳 DINHEIRO
+💵 Troco: Troco pra 50
+────────────────────────────────────────
+
+       ⚠️ SISTEMA DE CONTINGÊNCIA
+     Sistema principal indisponível
+
+       Obrigado pela preferência!
+                   🙏
+════════════════════════════════════════
+

@@ -48,8 +48,11 @@ function handleWebhook(req, res) {
       return;
     }
     
-    // Processar mensagem através do motor de regras
-    rulesEngine.processIncomingMessage(remoteJid, messageText);
+    // Processar mensagem através do motor de regras (em background)
+    rulesEngine.processIncomingMessage(remoteJid, messageText)
+      .catch(error => {
+        console.error('[WEBHOOK] ❌ Erro ao processar mensagem:', error.message);
+      });
     
   } catch (error) {
     console.error('[WEBHOOK] ❌ Erro ao processar webhook:', error.message);

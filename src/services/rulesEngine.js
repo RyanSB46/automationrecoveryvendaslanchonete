@@ -1,26 +1,79 @@
 /**
  * Motor de regras e controle de consentimento
  * Gerencia autorização de ALERTA e opt-in/opt-out
+ * Implementa Opção A (conversação) e Opção B (tudo de uma vez)
  */
 
 const fs = require('fs');
 const path = require('path');
 const evolutionClient = require('./evolutionClient');
+const printerService = require('./printerService');
 
 // Caminhos dos arquivos
 const AUTHORIZED_SENDERS_PATH = path.join(__dirname, '../../authorized_senders.json');
 const CONTACTS_PATH = path.join(__dirname, '../../contatos-lanchonete.json');
 const CONSENT_PATH = path.join(__dirname, '../../consent.json');
+const SESSIONS_PATH = path.join(__dirname, '../../refazer_sessions.json');
+const ORDERS_LOG_PATH = path.join(__dirname, '../../pedidos_refazer.json');
 
-// Mensagem de contingência oficial
-const CONTINGENCY_MESSAGE = `Nosso sistema caiu.
+// Configuração de modo (Option A ou B)
+const CONFIG = {
+  ENABLE_OPTION_A: true,   // Ativar conversação por etapas
+  ENABLE_OPTION_B: true,   // Ativar dados em uma mensagem
+  ACTIVE_MODE: 'A'         // 'A' ou 'B' — qual usar por padrão
+};
 
-Se você fez algum pedido hoje, por favor refaça seu pedido por aqui no WhatsApp.
+/**
+ * Gera mensagem de contingência dinamicamente
+ * Baseado no modo ativo (A ou B)
+ */
+function getContingencyMessage() {
+  const baseMessage = `🚨 Nosso sistema caiu por um momento.
 
-Se você não fez pedido, desconsidere esta mensagem.
+Se você fez algum pedido hoje, por favor *refaça seu pedido* aqui no WhatsApp.
 
-👉 Para continuar recebendo este aviso em situações como essa, responda SIM ou apenas ignore.
-👉 Para não receber mais mensagens, responda NÃO.`;
+Se você não fez pedido, desconsidere esta mensagem.`;
+
+  let instructionMessage = '';
+  
+  if (CONFIG.ACTIVE_MODE === 'A' && CONFIG.ENABLE_OPTION_A) {
+    instructionMessage = `
+📝 *Como refazer seu pedido:*
+Responda *UMA COISA POR VEZ* seguindo as instruções:
+
+1️⃣ Digite: *REFAZER*
+   (a gente vai perguntar o item)
+
+2️⃣ Responda qual *ITEM* você quer
+   (a gente vai perguntar o endereço)
+
+3️⃣ Responda seu *ENDEREÇO*
+   (a gente vai perguntar a forma de pagamento)
+
+4️⃣ Escolha a forma de pagamento:
+   *DINHEIRO*, *PIX* ou *CARTÃO*
+
+✅ Pronto! Seu pedido será confirmado.`;
+  } else if (CONFIG.ACTIVE_MODE === 'B' && CONFIG.ENABLE_OPTION_B) {
+    instructionMessage = `
+⚡ *Como refazer seu pedido (rápido):*
+Digite REFAZER seguido de todas as informações:
+
+Exemplo:
+REFAZER xtudo sem banana, pizza gg, rua flores 123, dinheiro, troco pra 50
+
+✅ Pronto! Seu pedido será confirmado na hora.`;
+  }
+
+  const consentMessage = `
+👉 Para continuar recebendo esses avisos, responda *SIM* (ou deixe em branco)
+👉 Para não receber mais, responda *NÃO*`;
+
+  return baseMessage + instructionMessage + consentMessage;
+}
+
+// Mensagem de contingência (gerada dinamicamente)
+let CONTINGENCY_MESSAGE = getContingencyMessage();
 
 /**
  * Carrega arquivo JSON de forma segura
@@ -50,6 +103,111 @@ function saveJSON(filePath, data) {
     return false;
   }
 }
+
+/**
+ * Gerencia sessões ativas do chatbot (Opção A)
+ */
+const SessionManager = {
+  /**
+   * Inicia uma nova sessão de refazer pedido
+   */
+  startSession(number) {
+    const sessions = loadJSON(SESSIONS_PATH, {});
+    sessions[number] = {
+      step: 'awaiting_item',
+      data: {},
+      startedAt: new Date().toISOString()
+    };
+    saveJSON(SESSIONS_PATH, sessions);
+    console.log(`[SESSION] 🆕 Sessão iniciada para ${number}`);
+  },
+
+  /**
+   * Obter sessão ativa
+   */
+  getSession(number) {
+    const sessions = loadJSON(SESSIONS_PATH, {});
+    return sessions[number] || null;
+  },
+
+  /**
+   * Atualizar sessão
+   */
+  updateSession(number, step, data = {}) {
+    const sessions = loadJSON(SESSIONS_PATH, {});
+    if (sessions[number]) {
+      sessions[number].step = step;
+      sessions[number].data = { ...sessions[number].data, ...data };
+      saveJSON(SESSIONS_PATH, sessions);
+    }
+  },
+
+  /**
+   * Finalizar e remover sessão
+   */
+  completeSession(number) {
+    const sessions = loadJSON(SESSIONS_PATH, {});
+    delete sessions[number];
+    saveJSON(SESSIONS_PATH, sessions);
+    console.log(`[SESSION] ✅ Sessão finalizada para ${number}`);
+  }
+};
+
+/**
+ * Gerencia log de pedidos
+ */
+const OrderLogger = {
+  /**
+   * Registra um pedido completado
+   * @param {string} from - Número do cliente (remoteJid)
+   * @param {string} item - Item do pedido
+   * @param {string} endereco - Endereço de entrega
+   * @param {string} pagamento - Forma de pagamento (DINHEIRO, PIX, CARTÃO)
+   * @param {string} troco - Informação sobre troco (opcional, apenas para DINHEIRO)
+   */
+  logOrder(from, item, endereco, pagamento, troco = null) {
+    const orders = loadJSON(ORDERS_LOG_PATH, []);
+    const orderId = Date.now();
+    
+    // Extrair número do cliente (remover @s.whatsapp.net)
+    const clientNumber = from.replace('@s.whatsapp.net', '');
+    
+    // Carregar contato para pegar nome (se disponível)
+    const allContacts = loadJSON(CONTACTS_PATH, []);
+    let clientName = null;
+    const contact = allContacts.find(c => 
+      (c.number && c.number.includes(clientNumber)) || 
+      (c.contactId && c.contactId === clientNumber)
+    );
+    if (contact && contact.name) {
+      clientName = contact.name;
+    }
+    
+    const order = {
+      id: orderId,
+      from: from,
+      numero: clientNumber,  // Número para o entregador ligar
+      nome: clientName,      // Nome do cliente (se disponível)
+      item: item,
+      endereco: endereco,
+      pagamento: pagamento,
+      troco: troco,          // Info de troco (se pagamento for DINHEIRO)
+      timestamp: new Date().toISOString()
+    };
+    
+    orders.push(order);
+    saveJSON(ORDERS_LOG_PATH, orders);
+    
+    console.log(`[ORDER] 📝 Pedido registrado (#${orderId}): ${item} - ${pagamento}${troco ? ` - Troco: ${troco}` : ''}`);
+    
+    // Enviar para impressão (simulada ou real)
+    printerService.printReceipt(order).catch(err => {
+      console.error('[ORDER] ❌ Erro ao imprimir cupom:', err.message);
+    });
+    
+    return order;
+  }
+};
 
 /**
  * Verifica se um número está autorizado a disparar ALERTA
@@ -101,6 +259,10 @@ function setConsent(number, status) {
 async function triggerAlertBroadcast() {
   console.log('[ADMIN] 🚨 ALERTA DISPARADO - Iniciando broadcast de contingência');
   
+  // Regenerar mensagem (em caso de mudança de CONFIG.ACTIVE_MODE)
+  CONTINGENCY_MESSAGE = getContingencyMessage();
+  console.log(`[ADMIN] 📢 Modo ativo: ${CONFIG.ACTIVE_MODE} - Instruções: ${CONFIG.ACTIVE_MODE === 'A' ? 'Conversação' : 'Tudo de uma vez'}`);
+  
   // Carregar lista de contatos
   const allContacts = loadJSON(CONTACTS_PATH, []);
   
@@ -133,13 +295,245 @@ async function triggerAlertBroadcast() {
 }
 
 /**
+ * Dispara o broadcast de desativação do sistema de recuperação
+ * Informa que o sistema principal voltou a funcionar
+ * Encerra o sistema após enviar mensagens
+ */
+async function triggerDeactivationBroadcast() {
+  console.log('[ADMIN] 🔴 DESATIVAÇÃO INICIADA - Sistema de recuperação sendo desligado');
+  
+  // Carregar lista de contatos
+  const allContacts = loadJSON(CONTACTS_PATH, []);
+  
+  if (allContacts.length === 0) {
+    console.error('[SYSTEM] ❌ Nenhum contato encontrado em contatos-lanchonete.json');
+    return;
+  }
+  
+  console.log(`[SYSTEM] 📋 Total de contatos carregados: ${allContacts.length}`);
+  
+  // Filtrar contatos elegíveis (não opt-out)
+  const eligibleContacts = allContacts.filter(contact => {
+    const identifier = contact.number || contact.chatId || contact.contactId;
+    const consent = getConsent(identifier);
+    return consent !== 'opt_out';
+  });
+  
+  console.log(`[SYSTEM] ✅ Contatos elegíveis: ${eligibleContacts.length}`);
+  
+  if (eligibleContacts.length === 0) {
+    console.log('[SYSTEM] ⚠️ Nenhum contato elegível para envio');
+    return;
+  }
+  
+  // Mensagem de desativação
+  const deactivationMessage = `✅ *SISTEMA VOLTA A FUNCIONAR!*
+
+Bom notícia! O sistema da *Anota Aí* voltou a funcionar normalmente.
+
+📌 *IMPORTANTE:*
+Se você fez pedido por aqui, *fique tranquilo* — foi enviado e tá tudo certo! ✔️
+Para *novos pedidos*, continue usando o *Anota Aí* normalmente.
+
+Este sistema de recuperação vai ficar *OFFLINE* agora.
+
+Obrigado por usar! 🙏`;
+
+  // Enviar mensagens em lote
+  await evolutionClient.sendBatchMessages(eligibleContacts, deactivationMessage);
+  
+  console.log('[ADMIN] ✅ Broadcast de desativação finalizado');
+  console.log('[SYSTEM] 🛑 Sistema de recuperação será desligado em 5 segundos...');
+  
+  // Aguardar um pouco antes de desligar para garantir que as mensagens foram enviadas
+  setTimeout(() => {
+    console.log('[SYSTEM] 🔴 ENCERRANDO SISTEMA...');
+    process.exit(0);
+  }, 5000);
+}
+
+/**
+ * OPÇÃO A: Conversação por etapas (estado máquina)
+ * Guia o cliente através de perguntas simples
+ */
+async function handleOptionA(remoteJid, messageText) {
+  const text = messageText.trim().toUpperCase();
+  let session = SessionManager.getSession(remoteJid);
+  
+  // Se não há sessão ativa, iniciar uma
+  if (!session) {
+    // Só iniciar se o texto é "REFAZER"
+    if (text === 'REFAZER') {
+      SessionManager.startSession(remoteJid);
+      await evolutionClient.sendTextMessage(
+        remoteJid,
+        '✅ Ótimo! Vou ajudar você a refazer seu pedido.\n\n📝 Qual item deseja? (ex: X-TUDO, HAMBÚRGUER, etc)'
+      );
+      SessionManager.updateSession(remoteJid, 'awaiting_item');
+      return;
+    }
+    return; // Ignorar se não é "REFAZER"
+  }
+  
+  // Máquina de estados
+  if (session.step === 'awaiting_item') {
+    SessionManager.updateSession(remoteJid, 'awaiting_address', { item: messageText });
+    await evolutionClient.sendTextMessage(
+      remoteJid,
+      `✅ Anotei: ${messageText}\n\n📍 Qual é seu endereço? (rua, número, etc)`
+    );
+    return;
+  }
+  
+  if (session.step === 'awaiting_address') {
+    SessionManager.updateSession(remoteJid, 'awaiting_payment', { endereco: messageText });
+    await evolutionClient.sendTextMessage(
+      remoteJid,
+      `✅ Endereço anotado: ${messageText}\n\n💳 Forma de pagamento?\nDigite: DINHEIRO, PIX ou CARTÃO`
+    );
+    return;
+  }
+  
+  if (session.step === 'awaiting_payment') {
+    const paymentText = messageText.trim().toUpperCase();
+    
+    if (!['DINHEIRO', 'PIX', 'CARTÃO', 'CARTAO'].includes(paymentText)) {
+      await evolutionClient.sendTextMessage(
+        remoteJid,
+        '❌ Desculpe, opção inválida. Digite: DINHEIRO, PIX ou CARTÃO'
+      );
+      return;
+    }
+    
+    // Normalizar CARTÃO
+    const paymentNormalized = paymentText === 'CARTAO' ? 'CARTÃO' : paymentText;
+    
+    // Se for DINHEIRO, perguntar sobre troco
+    if (paymentNormalized === 'DINHEIRO') {
+      SessionManager.updateSession(remoteJid, 'awaiting_change', { pagamento: paymentNormalized });
+      await evolutionClient.sendTextMessage(
+        remoteJid,
+        `✅ Pagamento: DINHEIRO\n\n💵 Vai precisar de troco?\n\nResponda de forma livre:\n• "sem troco"\n• "troco pra 50" (ou qualquer valor)\n\nOu apenas digite "não"` 
+      );
+      return;
+    }
+    
+    // Para PIX ou CARTÃO, pedir confirmação direta
+    // Pedido completo!
+    session = SessionManager.getSession(remoteJid);
+    const order = OrderLogger.logOrder(
+      remoteJid,
+      session.data.item,
+      session.data.endereco,
+      paymentNormalized
+    );
+    
+    await evolutionClient.sendTextMessage(
+      remoteJid,
+      `✅ Pedido confirmado!\n\n📋 Resumo:\n🍔 Item: ${session.data.item}\n📍 Endereço: ${session.data.endereco}\n💳 Pagamento: ${paymentNormalized}\n\n🆔 ID: #${order.id}\n\nObrigado! 🙏`
+    );
+    
+    SessionManager.completeSession(remoteJid);
+    return;
+  }
+  
+  // Nova etapa: Pergunta sobre troco (só quando DINHEIRO)
+  if (session.step === 'awaiting_change') {
+    const changeText = messageText.trim();
+    
+    // Registrar a resposta sobre troco
+    session = SessionManager.getSession(remoteJid);
+    const order = OrderLogger.logOrder(
+      remoteJid,
+      session.data.item,
+      session.data.endereco,
+      session.data.pagamento,
+      changeText  // passar info de troco
+    );
+    
+    await evolutionClient.sendTextMessage(
+      remoteJid,
+      `✅ Pedido confirmado!\n\n📋 Resumo:\n🍔 Item: ${session.data.item}\n📍 Endereço: ${session.data.endereco}\n💳 Pagamento: ${session.data.pagamento}\n💵 Troco: ${changeText}\n\n🆔 ID: #${order.id}\n\nObrigado! 🙏`
+    );
+    
+    SessionManager.completeSession(remoteJid);
+    return;
+  }
+}
+
+/**
+ * OPÇÃO B: Tudo de uma vez
+ * Cliente escreve tudo em uma mensagem livre
+ * Formato: REFAZER [texto livre com todos os dados]
+ * Exemplo: REFAZER xtudo sem banana, pizza gg, rua x 123, dinheiro
+ */
+async function handleOptionB(remoteJid, messageText) {
+  const text = messageText.trim();
+  const textUpper = text.toUpperCase();
+  
+  // Verificar se começa com REFAZER
+  if (!textUpper.startsWith('REFAZER')) {
+    return;
+  }
+  
+  // Extrair tudo depois de "REFAZER"
+  const pedidoCompleto = text.substring(7).trim(); // Remove "REFAZER" (7 caracteres)
+  
+  if (!pedidoCompleto) {
+    await evolutionClient.sendTextMessage(
+      remoteJid,
+      `❌ Você precisa informar os dados do pedido.\n\nExemplo:\nREFAZER xtudo, pizza, rua x 123, dinheiro`
+    );
+    return;
+  }
+  
+  // Salvar pedido exatamente como cliente escreveu
+  const order = OrderLogger.logOrder(
+    remoteJid, 
+    pedidoCompleto,  // Todo o texto vai como "item"
+    null,            // Não separamos endereço
+    'TEXTO_LIVRE',   // Marca que é texto livre
+    null             // Sem troco específico
+  );
+  
+  await evolutionClient.sendTextMessage(
+    remoteJid,
+    `✅ Pedido recebido!\n\n📋 Detalhes:\n${pedidoCompleto}\n\n🆔 ID: #${order.id}\n\nObrigado! 🙏`
+  );
+  
+  return;
+}
+
+/**
  * Processa mensagem recebida via webhook
  * @param {string} remoteJid - ID do chat remetente
  * @param {string} messageText - Texto da mensagem
  */
-function processIncomingMessage(remoteJid, messageText) {
+async function processIncomingMessage(remoteJid, messageText) {
   // Normalizar texto
   const text = messageText.trim().toUpperCase();
+  
+  // PRIORIDADE 0: Comando DESATIVAR
+  if (text === 'DESATIVAR') {
+    const role = isAuthorizedSender(remoteJid);
+    
+    if (role) {
+      console.log(`[ADMIN] 🔐 DESATIVAR autorizado por ${role} (${remoteJid})`);
+      triggerDeactivationBroadcast().catch(err => {
+        console.error('[ADMIN] ❌ Erro ao executar desativação:', err.message);
+      });
+    } else {
+      console.log(`[SECURITY] 🚫 DESATIVAR ignorado — remetente não autorizado (${remoteJid})`);
+      // Responder ao usuário não autorizado
+      await evolutionClient.sendTextMessage(
+        remoteJid,
+        '❌ Você não tem permissão para desativar o sistema.'
+      ).catch(err => {
+        console.error('[WEBHOOK] Erro ao enviar resposta:', err.message);
+      });
+    }
+    return;
+  }
   
   // PRIORIDADE 1: Comando ALERTA
   if (text === 'ALERTA') {
@@ -170,8 +564,24 @@ function processIncomingMessage(remoteJid, messageText) {
     return;
   }
   
+  // PRIORIDADE 4: Sistema de REFAZER PEDIDOS
+  // Opção exclusiva conforme CONFIG.ACTIVE_MODE
+  
+  if (CONFIG.ACTIVE_MODE === 'A' && CONFIG.ENABLE_OPTION_A) {
+    // OPÇÃO A: Conversação interativa
+    if (text.includes('REFAZER') || SessionManager.getSession(remoteJid)) {
+      await handleOptionA(remoteJid, messageText);
+      return;
+    }
+  } else if (CONFIG.ACTIVE_MODE === 'B' && CONFIG.ENABLE_OPTION_B) {
+    // OPÇÃO B: Tudo de uma vez
+    if (text.includes('REFAZER')) {
+      await handleOptionB(remoteJid, messageText);
+      return;
+    }
+  }
+  
   // Qualquer outro texto: ignorar completamente
-  // (não logar para evitar poluição de logs)
 }
 
 module.exports = {
@@ -179,5 +589,9 @@ module.exports = {
   getConsent,
   setConsent,
   triggerAlertBroadcast,
-  processIncomingMessage
+  triggerDeactivationBroadcast,
+  processIncomingMessage,
+  SessionManager,
+  OrderLogger,
+  CONFIG
 };
