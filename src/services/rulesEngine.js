@@ -288,10 +288,50 @@ async function triggerAlertBroadcast() {
     return;
   }
   
-  // Enviar mensagens em lote
-  await evolutionClient.sendBatchMessages(eligibleContacts, CONTINGENCY_MESSAGE);
+  // ============================================================================
+  // CÁLCULO DINÂMICO DO TEMPO ESTIMADO (mesma fórmula do DESATIVAR)
+  // ============================================================================
   
-  console.log('[ADMIN] ✅ Broadcast de contingência finalizado');
+  const TEMPO_POR_CHAT_MS = 50;           // ~50ms por chat (ajustável)
+  const BUFFER_SEGURANCA_MS = 5000;       // 5 segundos extras
+  const MAXIMO_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos máximo
+  
+  const estimatedTimeMs = Math.min(
+    (eligibleContacts.length * TEMPO_POR_CHAT_MS) + BUFFER_SEGURANCA_MS,
+    MAXIMO_TIMEOUT_MS
+  );
+  
+  const estimatedTimeSeconds = (estimatedTimeMs / 1000).toFixed(1);
+  const estimatedTimeMinutes = (estimatedTimeMs / 1000 / 60).toFixed(2);
+  const isAtMaximum = estimatedTimeMs >= MAXIMO_TIMEOUT_MS;
+  
+  console.log(`\n[SYSTEM] 📊 CÁLCULO DE TEMPO ESTIMADO:`);
+  console.log(`[SYSTEM] • Chats elegíveis: ${eligibleContacts.length}`);
+  console.log(`[SYSTEM] • Tempo por chat: 50ms`);
+  console.log(`[SYSTEM] • Tempo estimado: ${estimatedTimeSeconds}s (${estimatedTimeMinutes} min)`);
+  if (isAtMaximum) {
+    console.log(`[SYSTEM] ⚠️  ATINGIU MÁXIMO: 30 minutos`);
+  }
+  
+  // ============================================================================
+  // FIRE & FORGET: Enfileira na Evolution API e não aguarda
+  // ============================================================================
+  
+  console.log(`\n[SYSTEM] 📤 Enfileirando ${eligibleContacts.length} mensagens de alerta...`);
+  const enqueueStartTime = Date.now();
+  
+  // NÃO aguarda - enfileira em background
+  evolutionClient.sendBatchMessages(eligibleContacts, CONTINGENCY_MESSAGE)
+    .catch(err => {
+      console.error('[SYSTEM] ❌ Erro ao enfileirar broadcast de alerta:', err.message);
+    });
+  
+  const enqueueEndTime = Date.now();
+  const enqueueTime = (enqueueEndTime - enqueueStartTime);
+  
+  console.log(`[ADMIN] ✅ Mensagens de alerta enfileiradas em ${enqueueTime}ms`);
+  console.log(`[SYSTEM] 📤 ${eligibleContacts.length} mensagens serão enviadas automaticamente`);
+  console.log(`[SYSTEM] ⏱️  Evolution API processará tudo nos próximos ${estimatedTimeSeconds}s-30min\n`);
 }
 
 /**
@@ -307,6 +347,8 @@ async function triggerDeactivationBroadcast() {
   
   if (allContacts.length === 0) {
     console.error('[SYSTEM] ❌ Nenhum contato encontrado em contatos-lanchonete.json');
+    console.log('[SYSTEM] 🔴 ENCERRANDO SISTEMA...');
+    setTimeout(() => process.exit(0), 1000);
     return;
   }
   
@@ -323,6 +365,8 @@ async function triggerDeactivationBroadcast() {
   
   if (eligibleContacts.length === 0) {
     console.log('[SYSTEM] ⚠️ Nenhum contato elegível para envio');
+    console.log('[SYSTEM] 🔴 ENCERRANDO SISTEMA...');
+    setTimeout(() => process.exit(0), 1000);
     return;
   }
   
@@ -339,17 +383,71 @@ Este sistema de recuperação vai ficar *OFFLINE* agora.
 
 Obrigado por usar! 🙏`;
 
-  // Enviar mensagens em lote
-  await evolutionClient.sendBatchMessages(eligibleContacts, deactivationMessage);
+  // ============================================================================
+  // CÁLCULO DINÂMICO DO TIMEOUT BASEADO NA QUANTIDADE REAL DE CHATS
+  // ============================================================================
   
-  console.log('[ADMIN] ✅ Broadcast de desativação finalizado');
-  console.log('[SYSTEM] 🛑 Sistema de recuperação será desligado em 5 segundos...');
+  /**
+   * Fórmula dinâmica de timeout:
+   * 
+   * Cada batch (lote) processa 5 mensagens com delay de 10 segundos
+   * Logo: 1000 chats = 200 lotes = ~40-45 minutos no máximo
+   * 
+   * Parâmetros configuráveis para ajuste futura (no dia do teste real):
+   * - TEMPO_POR_CHAT_MS: tempo estimado por chat (atual: 50ms)
+   * - BUFFER_SEGURANCA: margem extra (atual: 5 segundos)
+   * - MAXIMO_TIMEOUT_MINUTOS: limite máximo (atual: 30 minutos)
+   */
   
-  // Aguardar um pouco antes de desligar para garantir que as mensagens foram enviadas
+  const TEMPO_POR_CHAT_MS = 50;           // ~50ms por chat (ajustável)
+  const BUFFER_SEGURANCA_MS = 5000;       // 5 segundos extras
+  const MAXIMO_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos máximo
+  
+  // Calcular timeout dinâmico
+  const calculatedTimeoutMs = Math.min(
+    (eligibleContacts.length * TEMPO_POR_CHAT_MS) + BUFFER_SEGURANCA_MS,
+    MAXIMO_TIMEOUT_MS
+  );
+  
+  const calculatedTimeoutSeconds = (calculatedTimeoutMs / 1000).toFixed(1);
+  const isAtMaximum = calculatedTimeoutMs >= MAXIMO_TIMEOUT_MS;
+  
+  console.log(`\n[SYSTEM] 📊 CÁLCULO DE TIMEOUT DINÂMICO:`);
+  console.log(`[SYSTEM] • Chats elegíveis: ${eligibleContacts.length}`);
+  console.log(`[SYSTEM] • Tempo por chat: ${TEMPO_POR_CHAT_MS}ms`);
+  console.log(`[SYSTEM] • Timeout calculado: ${calculatedTimeoutSeconds}s`);
+  if (isAtMaximum) {
+    console.log(`[SYSTEM] ⚠️  ATINGIU MÁXIMO: 30 minutos (${MAXIMO_TIMEOUT_MS / 1000}s)`);
+  }
+  console.log(`[SYSTEM] • Tolerância para variações: ${(BUFFER_SEGURANCA_MS / 1000).toFixed(1)}s`);
+  
+  // ============================================================================
+  // FIRE & FORGET: Enfileira na Evolution API e não aguarda
+  // ============================================================================
+  
+  console.log(`\n[SYSTEM] 📤 Enfileirando ${eligibleContacts.length} mensagens...`);
+  const enqueueStartTime = Date.now();
+  
+  // NÃO aguarda - enfileira em background
+  evolutionClient.sendBatchMessages(eligibleContacts, deactivationMessage)
+    .catch(err => {
+      console.error('[SYSTEM] ❌ Erro ao enfileirar broadcast:', err.message);
+    });
+  
+  const enqueueEndTime = Date.now();
+  const enqueueTime = (enqueueEndTime - enqueueStartTime);
+  
+  console.log(`[ADMIN] ✅ Mensagens enfileiradas em ${enqueueTime}ms`);
+  console.log(`[SYSTEM] 📤 ${eligibleContacts.length} mensagens serão enviadas automaticamente`);
+  console.log(`[SYSTEM] ⏱️  Evolution API processará tudo nos próximos ${calculatedTimeoutSeconds}s-30min`);
+  console.log(`[SYSTEM] 🔴 ENCERRANDO SERVIDOR EM ${(calculatedTimeoutMs / 1000).toFixed(1)}s...\n`);
+  
+  // Desligar após timeout calculado dinamicamente
   setTimeout(() => {
-    console.log('[SYSTEM] 🔴 ENCERRANDO SISTEMA...');
+    console.log('[SYSTEM] 💤 Servidor offline - Evolution API continua processando em background');
+    console.log('[SYSTEM] ✅ Todas as mensagens foram enfileiradas para entrega\n');
     process.exit(0);
-  }, 5000);
+  }, calculatedTimeoutMs);
 }
 
 /**

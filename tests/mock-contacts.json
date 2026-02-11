@@ -1,0 +1,22 @@
+[
+  { "number": "5527991111111", "name": "Cliente 1", "chatId": "5527991111111@s.whatsapp.net" },
+  { "number": "5527992222222", "name": "Cliente 2", "chatId": "5527992222222@s.whatsapp.net" },
+  { "number": "5527993333333", "name": "Cliente 3", "chatId": "5527993333333@s.whatsapp.net" },
+  { "number": "5527994444444", "name": "Cliente 4", "chatId": "5527994444444@s.whatsapp.net" },
+  { "number": "5527995555555", "name": "Cliente 5", "chatId": "5527995555555@s.whatsapp.net" },
+  { "number": "5527996666666", "name": "Cliente 6", "chatId": "5527996666666@s.whatsapp.net" },
+  { "number": "5527997777777", "name": "Cliente 7", "chatId": "5527997777777@s.whatsapp.net" },
+  { "number": "5527998888888", "name": "Cliente 8", "chatId": "5527998888888@s.whatsapp.net" },
+  { "number": "5527999999999", "name": "Cliente 9", "chatId": "5527999999999@s.whatsapp.net" },
+  { "number": "5527990000000", "name": "Cliente 10", "chatId": "5527990000000@s.whatsapp.net" },
+  { "number": "5521991111111", "name": "Cliente 11", "chatId": "5521991111111@s.whatsapp.net" },
+  { "number": "5521992222222", "name": "Cliente 12", "chatId": "5521992222222@s.whatsapp.net" },
+  { "number": "5521993333333", "name": "Cliente 13", "chatId": "5521993333333@s.whatsapp.net" },
+  { "number": "5521994444444", "name": "Cliente 14", "chatId": "5521994444444@s.whatsapp.net" },
+  { "number": "5521995555555", "name": "Cliente 15", "chatId": "5521995555555@s.whatsapp.net" },
+  { "number": "5521996666666", "name": "Cliente 16", "chatId": "5521996666666@s.whatsapp.net" },
+  { "number": "5521997777777", "name": "Cliente 17", "chatId": "5521997777777@s.whatsapp.net" },
+  { "number": "5521998888888", "name": "Cliente 18", "chatId": "5521998888888@s.whatsapp.net" },
+  { "number": "5521999999999", "name": "Cliente 19", "chatId": "5521999999999@s.whatsapp.net" },
+  { "number": "5521990000000", "name": "Cliente 20", "chatId": "5521990000000@s.whatsapp.net" }
+]
